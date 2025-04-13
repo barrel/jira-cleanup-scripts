@@ -1,0 +1,5 @@
+node_modules/
+jira-credentials.json
+cookies.json
+shared-filters.csv
+shared-filters.json
