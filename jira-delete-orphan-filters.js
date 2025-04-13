@@ -1,12 +1,14 @@
 import fs from 'fs';
 import path from 'path';
-import { parse } from 'csv-parse/sync';
 import { fileURLToPath } from 'url';
 import { loadCredentials } from './load-credentials.js';
-const { EMAIL, API_TOKEN, JIRA_BASE_URL } = loadCredentials();
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CSV_PATH = path.join(__dirname, 'shared-filters.csv');
-const DRY_RUN = false; // Set to false to actually delete
+
+const FILTERS_JSON_PATH = path.join(__dirname, 'shared-filters.json');
+const DRY_RUN = true; // Set to false to actually delete filters
+
+const { EMAIL, API_TOKEN, JIRA_BASE_URL } = loadCredentials();
 
 const headers = {
   'Authorization': 'Basic ' + Buffer.from(`${EMAIL}:${API_TOKEN}`).toString('base64'),
@@ -21,19 +23,20 @@ async function isUserOrphaned(ownerName) {
   const res = await fetch(url, { headers });
 
   if (!res.ok) {
-    console.error(`❌ Error checking user ${ownerName}: ${res.status}`);
+    console.error(`❌ Error checking user "${ownerName}": ${res.status}`);
     return true;
   }
 
   const users = await res.json();
+
   if (users.length === 0) {
-    console.log(`🧟 No active user found for "${ownerName}" — marking as orphaned.`);
+    console.log(`🧟 No active user found for "${ownerName}" — marked as orphaned`);
     return true;
   }
 
   const user = users[0];
   if (!user.active) {
-    console.log(`🧟 User "${ownerName}" is inactive.`);
+    console.log(`🧟 User "${ownerName}" is inactive`);
     return true;
   }
 
@@ -41,12 +44,13 @@ async function isUserOrphaned(ownerName) {
 }
 
 async function deleteFilter(filterId, name) {
+  const url = `${JIRA_BASE_URL}/rest/api/3/filter/${filterId}`;
+
   if (DRY_RUN) {
     console.log(`🧪 DRY RUN — Would delete filter ${filterId}: "${name}"`);
     return;
   }
 
-  const url = `${JIRA_BASE_URL}/rest/api/3/filter/${filterId}`;
   const res = await fetch(url, { method: 'DELETE', headers });
 
   if (res.status === 204) {
@@ -58,30 +62,33 @@ async function deleteFilter(filterId, name) {
 }
 
 async function main() {
-  const csvData = fs.readFileSync(CSV_PATH, 'utf8');
-  const records = parse(csvData, { columns: true });
+  if (!fs.existsSync(FILTERS_JSON_PATH)) {
+    console.error('❌ shared-filters.json not found.');
+    process.exit(1);
+  }
 
-  const uniqueOwners = [...new Set(records.map(r => r.Owner))];
+  const filters = JSON.parse(fs.readFileSync(FILTERS_JSON_PATH, 'utf8'));
+  const uniqueOwners = [...new Set(filters.map(f => f.owner).filter(Boolean))];
   const orphanedUsers = new Set();
 
-  console.log(`🔎 Checking ${uniqueOwners.length} unique users...`);
+  console.log(`🔍 Checking ${uniqueOwners.length} unique users...`);
+
   for (const owner of uniqueOwners) {
     const orphaned = await isUserOrphaned(owner);
-    if (orphaned) {
-      orphanedUsers.add(owner);
-    }
+    if (orphaned) orphanedUsers.add(owner);
     await delay(500);
   }
 
-  const orphanedFilters = records.filter(r => orphanedUsers.has(r.Owner));
+  const orphanedFilters = filters.filter(f => orphanedUsers.has(f.owner));
 
-  console.log(`🧹 Found ${orphanedFilters.length} orphaned filters to delete.`);
-  for (const filter of orphanedFilters) {
-    await deleteFilter(filter['Filter ID'], filter['Name']);
+  console.log(`🧹 Found ${orphanedFilters.length} orphaned filters to delete:`);
+
+  for (const f of orphanedFilters) {
+    await deleteFilter(f.filterId, f.name);
     await delay(500);
   }
 
-  console.log('✅ Done!');
+  console.log(`✅ Done. ${DRY_RUN ? 'No filters actually deleted (dry run).' : 'Filters removed.'}`);
 }
 
 main();

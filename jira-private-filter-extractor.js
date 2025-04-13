@@ -1,11 +1,13 @@
-const fs = require('fs');
-const path = require('path');
-const readline = require('readline');
-const puppeteer = require('puppeteer');
+import fs from 'fs';
+import path from 'path';
+import readline from 'readline';
+import puppeteer from 'puppeteer';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const JIRA_BASE = 'https://barrel.atlassian.net';
 const COOKIES_PATH = path.join(__dirname, 'cookies.json');
-const CSV_PATH = path.join(__dirname, 'shared-filters.csv');
 const JSON_PATH = path.join(__dirname, 'shared-filters.json');
 const RESUME_PATH = path.join(__dirname, 'resume.json');
 
@@ -60,18 +62,6 @@ async function extractCurrentPageFilters(page) {
   });
 }
 
-function filtersToCSVLines(filters) {
-  return filters.map(f =>
-    `"${f.filterId}","${f.name}","${f.owner}","${f.shares}","${f.lastViewed}","${f.favorites}"`
-  );
-}
-
-function loadCSVLines() {
-  if (!fs.existsSync(CSV_PATH)) return new Set();
-  const lines = fs.readFileSync(CSV_PATH, 'utf8').split('\n').slice(1);
-  return new Set(lines.filter(Boolean));
-}
-
 (async () => {
   const browser = await puppeteer.launch({ headless: false });
   const page = await browser.newPage();
@@ -103,27 +93,26 @@ function loadCSVLines() {
     waitUntil: 'networkidle2'
   });
 
+  // Handle resuming
   let resumePage = 1;
+  let allFilters = [];
+
   if (fs.existsSync(RESUME_PATH)) {
     const resumeData = JSON.parse(fs.readFileSync(RESUME_PATH, 'utf8'));
     const confirm = await prompt(`Resume from page ${resumeData.page}? (y/n): `);
     if (confirm === 'y') {
       resumePage = resumeData.page;
+      allFilters = fs.existsSync(JSON_PATH)
+        ? JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'))
+        : [];
       console.log(`🔁 Resuming from page ${resumePage}`);
     } else {
-      console.log('🔄 Starting from scratch');
-      if (fs.existsSync(CSV_PATH)) fs.unlinkSync(CSV_PATH);
-      if (fs.existsSync(JSON_PATH)) fs.unlinkSync(JSON_PATH);
-      fs.writeFileSync(CSV_PATH, 'Filter ID,Name,Owner,Shares,Last Viewed,Favorites\n');
+      fs.unlinkSync(RESUME_PATH);
+      fs.existsSync(JSON_PATH) && fs.unlinkSync(JSON_PATH);
+      console.log('🧼 Starting fresh...');
     }
-  } else {
-    fs.writeFileSync(CSV_PATH, 'Filter ID,Name,Owner,Shares,Last Viewed,Favorites\n');
   }
 
-  const savedLines = loadCSVLines();
-  let allFilters = fs.existsSync(JSON_PATH)
-    ? JSON.parse(fs.readFileSync(JSON_PATH, 'utf8'))
-    : [];
   let currentPage = resumePage;
 
   while (true) {
@@ -133,21 +122,9 @@ function loadCSVLines() {
       console.log(`🆔 ${f.filterId} — ${f.name}`);
     });
 
-    const lines = filtersToCSVLines(filters);
+    allFilters.push(...filters);
 
-    const newLines = lines.filter(line => !savedLines.has(line));
-    const newFilters = filters.filter((_, i) => !savedLines.has(lines[i]));
-
-    if (newLines.length) {
-      fs.appendFileSync(CSV_PATH, newLines.join('\n') + '\n');
-      allFilters.push(...newFilters);
-      fs.writeFileSync(JSON_PATH, JSON.stringify(allFilters, null, 2));
-      console.log(`✅ Saved ${newLines.length} new filters`);
-    } else {
-      console.log('⚠️ No new filters on this page (skipped)');
-    }
-
-    // Save progress
+    fs.writeFileSync(JSON_PATH, JSON.stringify(allFilters, null, 2));
     fs.writeFileSync(RESUME_PATH, JSON.stringify({ page: currentPage + 1 }, null, 2));
 
     const nextLink = await page.$('a.icon.icon-next');
@@ -163,10 +140,10 @@ function loadCSVLines() {
       page.waitForNavigation({ waitUntil: 'networkidle2' })
     ]);
 
-    await delay(10000); // Wait ~10s to ensure load
+    await delay(10000);
     currentPage++;
   }
 
-  console.log('🎉 Done. CSV + JSON saved.');
+  console.log('✅ Done. Saved to shared-filters.json');
   await browser.close();
 })();
