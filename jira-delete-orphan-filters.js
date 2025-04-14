@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { loadCredentials } from './load-credentials.js';
+import { loadCredentials } from './jira-load-credentials.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const readline = require('readline');
 const path = require('path');
-import { loadCredentials } from './load-credentials.js';
+import { loadCredentials } from './jira-load-credentials.js';
 const { EMAIL, API_TOKEN, JIRA_BASE_URL } = loadCredentials();
 
 const authHeader = 'Basic ' + Buffer.from(`${EMAIL}:${API_TOKEN}`).toString('base64');
