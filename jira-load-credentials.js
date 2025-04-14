@@ -11,11 +11,11 @@ export function loadCredentials() {
   }
 
   const raw = fs.readFileSync(CREDENTIALS_PATH, 'utf8');
-  const { email, apiToken, baseUrl } = JSON.parse(raw);
+  const { EMAIL, API_TOKEN, JIRA_BASE_URL } = JSON.parse(raw);
 
-  if (!email || !apiToken || !baseUrl) {
+  if (!EMAIL || !API_TOKEN || !JIRA_BASE_URL) {
     throw new Error('jira-credentials.json is missing required fields.');
   }
 
-  return { email, apiToken, baseUrl };
+  return { EMAIL, API_TOKEN, JIRA_BASE_URL };
 }
