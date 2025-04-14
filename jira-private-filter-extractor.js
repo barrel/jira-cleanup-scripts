@@ -118,7 +118,9 @@ async function extractCurrentPageFilters(page) {
   while (true) {
     console.log(`📄 Processing page ${currentPage}...`);
     const filters = await extractCurrentPageFilters(page);
-    filters.forEach(f => {
+    filters.filter(f => {
+      return f.filterId > 0;
+    }).forEach(f => {
       console.log(`🆔 ${f.filterId} — ${f.name}`);
     });
 
